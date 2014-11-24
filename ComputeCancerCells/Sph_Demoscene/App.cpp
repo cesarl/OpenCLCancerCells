@@ -18,8 +18,6 @@
 #include <thread>
 #include <vector>
 
-#include <CL/opencl.h>
-
 static const glm::vec4 CANCER(1,0,0,1);
 static const glm::vec4 HEALTH(0,1,0,1);
 static const glm::vec4 MEDECINE(1,1,0,1);
@@ -43,7 +41,10 @@ App::App()
 	, _healthyPercent(30)
 {
 	for (auto i = 0; i < SboChannel::END; ++i)
+	{
 		_sbos[i] = 0;
+		_clSbos[i] = 0;
+	}
 }
 
 App::~App()
@@ -133,11 +134,10 @@ bool App::init()
 			, CL_CONTEXT_PLATFORM, (cl_context_properties)platformIds[1]
 			, 0
 		};
-		cl_device_id devices[100];
 		cl_uint devices_n = 0;
-		clGetDeviceIDs(platformIds[1], CL_DEVICE_TYPE_GPU, 100, devices, &devices_n);
-		auto context = clCreateContext(p, 1, devices, nullptr, nullptr, nullptr);
-		if (context <= 0)
+		clGetDeviceIDs(platformIds[1], CL_DEVICE_TYPE_GPU, 100, _devices, &devices_n);
+		auto _cl_context = clCreateContext(p, 1, _devices, nullptr, nullptr, nullptr);
+		if (_cl_context <= 0)
 		{
 			printf("Invalid openCL context !\n");
 			std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -168,12 +168,12 @@ void App::generateBuffers()
 
 	// READ
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[_read]);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STREAM_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[_read]);
+		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STATIC_DRAW);
 
 		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
-		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
+		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
 
 		for (GLuint i = 0; i < _width * _height; ++i)
 		{
@@ -196,61 +196,71 @@ void App::generateBuffers()
 			points[rand() % _width + rand() % _height * _width] = glm::vec4(HEALTH.x, HEALTH.y, 0,0);
 			h--;
 		}
-		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
 	// WRITE
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[_write]);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STREAM_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[_write]);
+		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STREAM_DRAW);
 
 		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
-		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
+		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
 
 		for (GLuint i = 0; i < _width * _height; ++i)
 		{
 			points[i] = NONE;
 		}
-		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
 	// POSITIONS
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[SboChannel::Positions]);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STREAM_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[SboChannel::Positions]);
+		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STREAM_DRAW);
 
 		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
-		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
+		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
 
 		glm::vec4 div(_width / 2.0f, _height / 2.0f, 1, 1);
 		for (GLuint i = 0; i < _width * _height; ++i)
 		{
 			points[i] = (glm::vec4(i % _width, i / _width, 1, 2) - div) / div;
 		}
-		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
 	// COUNTER
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[SboChannel::Counter]);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, 4 * sizeof(unsigned int), NULL, GL_STREAM_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[SboChannel::Counter]);
+		glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(unsigned int), NULL, GL_STREAM_DRAW);
 
 		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
-		unsigned int *points = (unsigned int*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
+		unsigned int *points = (unsigned int*)glMapBufferRange(GL_ARRAY_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
 
 		for (GLuint i = 0; i < 4; ++i)
 		{
 			points[i] = 0;
 		}
-		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
+
+	for (auto i = 0; i < SboChannel::END; ++i)
+	{
+		if (_clSbos[i] != 0)
+		{
+			clReleaseMemObject(_clSbos[i]);
+		}
+		_clSbos[i] = clCreateFromGLBuffer(_cl_context, CL_MEM_READ_WRITE, _sbos[i], nullptr);
+	}
+
 }
 
 bool App::run()
@@ -266,24 +276,24 @@ bool App::run()
 	{
 		// CLEAR COUNTER
 		{
-			glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[Counter]);
+			glBindBuffer(GL_ARRAY_BUFFER, _sbos[Counter]);
 			GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
-			unsigned int *points = (unsigned int*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
+			unsigned int *points = (unsigned int*)glMapBufferRange(GL_ARRAY_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
 			for (std::size_t i = 0; i < 4; ++i)
 				points[i] = 0;
-			glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+			glUnmapBuffer(GL_ARRAY_BUFFER);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
 		}
 
 		if (_inject)
 		{
-			glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[_read]);
+			glBindBuffer(GL_ARRAY_BUFFER, _sbos[_read]);
 
 			GLint bufMask = GL_MAP_WRITE_BIT;
-			glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
+			glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
 			points[(_injectCoord.x) + (_height -_injectCoord.y) * _width] = glm::vec4(MEDECINE.x, MEDECINE.y, 0,1);
-			glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+			glUnmapBuffer(GL_ARRAY_BUFFER);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
 			_inject = false;
 		}
 
@@ -291,9 +301,9 @@ bool App::run()
 		auto shaderId = shader->getId();
 		shader->use();
 
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _sbos[_read]);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _sbos[_write]);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _sbos[Counter]);
+		glBindBufferBase(GL_ARRAY_BUFFER, 0, _sbos[_read]);
+		glBindBufferBase(GL_ARRAY_BUFFER, 1, _sbos[_write]);
+		glBindBufferBase(GL_ARRAY_BUFFER, 2, _sbos[Counter]);
 
 		glDispatchCompute(_width * _height / _workGroupSize, 1, 1);
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
@@ -305,8 +315,8 @@ bool App::run()
 		auto shaderId = shader->getId();
 		shader->use();
 
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _sbos[_read]);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _sbos[_write]);
+		glBindBufferBase(GL_ARRAY_BUFFER, 0, _sbos[_read]);
+		glBindBufferBase(GL_ARRAY_BUFFER, 1, _sbos[_write]);
 
 		auto width = glGetUniformLocation(shaderId, "Width");
 		auto height = glGetUniformLocation(shaderId, "Height");
@@ -365,14 +375,14 @@ bool App::run()
 
 	// Display counter
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, _sbos[Counter]);
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[Counter]);
 		GLint bufMask = GL_MAP_READ_BIT;
-		unsigned int *points = (unsigned int*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
+		unsigned int *points = (unsigned int*)glMapBufferRange(GL_ARRAY_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
 		ImGui::Text("Healthy cells : %i", points[0]);
 		ImGui::Text("Cancer cells : %i", points[1]);
 		ImGui::Text("Medecine cells : %i", points[2]);
-		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
 	ImGui::Render();
