@@ -52,10 +52,11 @@ App::~App()
 }
 
 
-void App::init()
+bool App::init()
 {
 	static std::once_flag flag;
-	std::call_once(flag, [this](){
+	bool res = true;
+	std::call_once(flag, [this, &res](){
 		assert(SDL_Init(SDL_INIT_VIDEO) == 0);
 
 		_window = SDL_CreateWindow("COMPUTE SHADER CANCER CELLS", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -130,15 +131,20 @@ void App::init()
 			CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext()
 			, CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC()
 			, CL_CONTEXT_PLATFORM, (cl_context_properties)platformIds[1]
-			 , 0
+			, 0
 		};
 		cl_device_id devices[100];
 		cl_uint devices_n = 0;
 		clGetDeviceIDs(platformIds[1], CL_DEVICE_TYPE_GPU, 100, devices, &devices_n);
 		auto context = clCreateContext(p, 1, devices, nullptr, nullptr, nullptr);
-
+		if (context <= 0)
+		{
+			printf("Invalid openCL context !\n");
+			std::this_thread::sleep_for(std::chrono::seconds(2));
+			res = false;
+		}
 	});
-
+	return res;
 }
 
 void App::loadShaders()

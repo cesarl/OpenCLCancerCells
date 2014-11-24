@@ -23,7 +23,7 @@ public:
 	App(App &&) = delete;
 	App &operator=(const App &) = delete;
 	App &operator=(App &&) = delete;
-	void init();
+	bool init();
 	void generateBuffers(GLuint particleNumber);
 	void generateBuffers();
 	bool run();
