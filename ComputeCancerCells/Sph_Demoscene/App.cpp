@@ -25,8 +25,6 @@ static const glm::vec4 NONE(0,0,0,1);
 
 App::App()
 	: _window(nullptr)
-	, _computeNewStateShader(nullptr)
-	, _copyOldStateShader(nullptr)
 	, _renderShader(nullptr)
 	, _totalTime(0.0f)
 	, _deltaTime(0)
@@ -65,92 +63,18 @@ bool App::init()
 		assert(_window != nullptr);
 		_context = SDL_GL_CreateContext(_window);
 		glewInit();
-		loadShaders();
 		ImguiConf::InitImGui();
 
-		cl_uint platformIdCount = 0;
-		clGetPlatformIDs(0, nullptr, &platformIdCount);
-
-		std::vector<cl_platform_id> platformIds(platformIdCount);
-		clGetPlatformIDs(platformIdCount, platformIds.data(), nullptr);
-
-		int i = -1;
-		printf("List of platforms :\n");
-		for (auto &e : platformIds)
-		{
-			++i;
-			char buffer[10240];
-			printf("-------- Platfrom %d --------\n", i);
-			clGetPlatformInfo(e, CL_PLATFORM_PROFILE, 10240, buffer, NULL);
-			printf("  PROFILE = %s\n", buffer);
-			clGetPlatformInfo(e, CL_PLATFORM_VERSION, 10240, buffer, NULL);
-			printf("  VERSION = %s\n", buffer);
-			clGetPlatformInfo(e, CL_PLATFORM_NAME, 10240, buffer, NULL);
-			printf("  NAME = %s\n", buffer);
-			clGetPlatformInfo(e, CL_PLATFORM_VENDOR, 10240, buffer, NULL);
-			printf("  VENDOR = %s\n", buffer);
-			clGetPlatformInfo(e, CL_PLATFORM_EXTENSIONS, 10240, buffer, NULL);
-			printf("  EXTENSIONS = %s\n", buffer);
-
-			cl_device_id devices[100];
-			cl_uint devices_n = 0;
-
-			clGetDeviceIDs(platformIds[i], CL_DEVICE_TYPE_GPU, 100, devices, &devices_n);
-
-
-			printf("=== %d OpenCL device(s) found on platform %d:\n", devices_n, i);
-			for (int j = 0; j < devices_n; j++)
-			{
-				char buffer[10240];
-				cl_uint buf_uint;
-				cl_ulong buf_ulong;
-				printf("  Devie : %d --\n", j);
-				clGetDeviceInfo(devices[j], CL_DEVICE_NAME, sizeof(buffer), buffer, NULL);
-				printf("  DEVICE_NAME = %s\n", buffer);
-				clGetDeviceInfo(devices[j], CL_DEVICE_VENDOR, sizeof(buffer), buffer, NULL);
-				printf("  DEVICE_VENDOR = %s\n", buffer);
-				clGetDeviceInfo(devices[j], CL_DEVICE_VERSION, sizeof(buffer), buffer, NULL);
-				printf("  DEVICE_VERSION = %s\n", buffer);
-				clGetDeviceInfo(devices[j], CL_DRIVER_VERSION, sizeof(buffer), buffer, NULL);
-				printf("  DRIVER_VERSION = %s\n", buffer);
-				clGetDeviceInfo(devices[j], CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(buf_uint), &buf_uint, NULL);
-				printf("  DEVICE_MAX_COMPUTE_UNITS = %u\n", (unsigned int)buf_uint);
-				clGetDeviceInfo(devices[j], CL_DEVICE_MAX_SAMPLERS, sizeof(buf_uint), &buf_uint, NULL);
-				printf("  DEVICE_MAX_SAMPLERS = %u\n", (unsigned int)buf_uint);
-				clGetDeviceInfo(devices[j], CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(buf_uint), &buf_uint, NULL);
-				printf("  DEVICE_MAX_WORK_GROUP_SIZE = %u\n", (unsigned int)buf_uint);
-				clGetDeviceInfo(devices[j], CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(buf_uint), &buf_uint, NULL);
-				printf("  KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE = %u\n", (unsigned int)buf_uint);
-				clGetDeviceInfo(devices[j], CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(buf_uint), &buf_uint, NULL);
-				printf("  DEVICE_MAX_CLOCK_FREQUENCY = %u\n", (unsigned int)buf_uint);
-				clGetDeviceInfo(devices[j], CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(buf_ulong), &buf_ulong, NULL);
-				printf("  DEVICE_GLOBAL_MEM_SIZE = %llu\n", (unsigned long long)buf_ulong);
-			}
-		}
-
-		cl_context_properties p[] = {
-			CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext()
-			, CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC()
-			, CL_CONTEXT_PLATFORM, (cl_context_properties)platformIds[1]
-			, 0
-		};
-		cl_uint devices_n = 0;
-		clGetDeviceIDs(platformIds[1], CL_DEVICE_TYPE_GPU, 100, _devices, &devices_n);
-		auto _cl_context = clCreateContext(p, 1, _devices, nullptr, nullptr, nullptr);
-		if (_cl_context <= 0)
-		{
-			printf("Invalid openCL context !\n");
-			std::this_thread::sleep_for(std::chrono::seconds(2));
-			res = false;
-		}
+		_device = ocl::displayDevices();
+		loadShaders();
 	});
 	return res;
 }
 
 void App::loadShaders()
 {
-	_computeNewStateShader = std::make_unique<OpenGLTools::Shader>("Shaders/ComputeNewState.kernel");
-	_copyOldStateShader = std::make_unique<OpenGLTools::Shader>("Shaders/CopyOldState.kernel");
+	_copyOldStateShader = ocl_kernel(&_device, "Shaders/CopyOldState.cl");
+	_computeNewStateShader = ocl_kernel(&_device, "Shaders/ComputeNewState.cl");
 	_renderShader = std::make_unique<OpenGLTools::Shader>("Shaders/Render.vp", "Shaders/Render.fp");
 }
 
@@ -169,51 +93,18 @@ void App::generateBuffers()
 	// READ
 	{
 		glBindBuffer(GL_ARRAY_BUFFER, _sbos[_read]);
-		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(float) * 4, NULL, GL_STREAM_DRAW);
 
-		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
-		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
-
-		for (GLuint i = 0; i < _width * _height; ++i)
-		{
-		}
-		unsigned int c = _width * _height * _cancerPercent / 100;
-		unsigned int h = _width * _height * _healthyPercent / 100;
-		unsigned int t = _width * _height;
-		for (GLuint i = 0; i < _width * _height; ++i)
-		{
-			points[i] = glm::vec4(NONE.x, NONE.y, 0, 1);
-		}
-
-		while (c != 0)
-		{
-			points[rand() % _width + rand() % _height * _width] = glm::vec4(CANCER.x, CANCER.y, 0,0);
-			c--;
-		}
-		while (h != 0)
-		{
-			points[rand() % _width + rand() % _height * _width] = glm::vec4(HEALTH.x, HEALTH.y, 0,0);
-			h--;
-		}
-		glUnmapBuffer(GL_ARRAY_BUFFER);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
 	// WRITE
 	{
 		glBindBuffer(GL_ARRAY_BUFFER, _sbos[_write]);
-		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(glm::vec4), NULL, GL_STREAM_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, _width * _height * sizeof(float) * 4, NULL, GL_STREAM_DRAW);
 
-		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
-		glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
-
-		for (GLuint i = 0; i < _width * _height; ++i)
-		{
-			points[i] = NONE;
-		}
-		glUnmapBuffer(GL_ARRAY_BUFFER);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
@@ -240,7 +131,7 @@ void App::generateBuffers()
 		glBindBuffer(GL_ARRAY_BUFFER, _sbos[SboChannel::Counter]);
 		glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(unsigned int), NULL, GL_STREAM_DRAW);
 
-		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
+		/*GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
 
 		unsigned int *points = (unsigned int*)glMapBufferRange(GL_ARRAY_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
 
@@ -248,88 +139,176 @@ void App::generateBuffers()
 		{
 			points[i] = 0;
 		}
-		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glUnmapBuffer(GL_ARRAY_BUFFER);*/
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
-	for (auto i = 0; i < SboChannel::END; ++i)
+	for (auto i = 0; i < SboChannel::Positions; ++i)
 	{
 		if (_clSbos[i] != 0)
 		{
 			clReleaseMemObject(_clSbos[i]);
 		}
-		_clSbos[i] = clCreateFromGLBuffer(_cl_context, CL_MEM_READ_WRITE, _sbos[i], nullptr);
 	}
+	glFinish();
+	for (auto i = 0; i < SboChannel::Positions; ++i)
+	{
+		int err;
+		_clSbos[i] = clCreateFromGLBuffer(_device.getContext(), CL_MEM_READ_WRITE, _sbos[i], &err);
+		if (err < 0) {
+			perror("Couldn't create a buffer object from the VBO");
+			exit(1);
+		}
+	}
+
+	int err = clSetKernelArg(_copyOldStateShader.getKernel(), 2, sizeof(cl_mem), &_clSbos[SboChannel::Counter]);
+	if (err < 0) {
+		printf("Couldn't set a kernel argument");
+		exit(1);
+	};
+
+
+	clFinish(_device.getCommandQueue());
+	glBindBuffer(GL_ARRAY_BUFFER, _sbos[_read]);
+
+	GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
+
+	float *points = (float*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(float) * 4, bufMask);
+
+		for (GLuint i = 0; i < _width * _height; ++i)
+		{
+		}
+		unsigned int c = _width * _height * _cancerPercent / 100;
+		unsigned int h = _width * _height * _healthyPercent / 100;
+
+		for (GLuint i = 0; i < _width * _height; ++i)
+		{
+			auto t = i * 4;
+			points[t] = NONE.x;
+			points[t + 1] = NONE.y;
+			points[t + 2] = 0;
+			points[t + 3] = 1;
+		}
+
+		while (c != 0)
+		{
+			auto i = (rand() % _width + rand() % _height * _width) * 4;
+			points[i] = CANCER.x;
+			points[i + 1] = CANCER.y;
+			points[i + 2] = 0;
+			points[i + 3] = 1;
+			c--;
+		}
+		while (h != 0)
+		{
+			auto i = (rand() % _width + rand() % _height * _width) * 4;
+			points[i] = HEALTH.x;
+			points[i + 1] = HEALTH.y;
+			points[i + 2] = 0;
+			points[i + 3] = 1;
+
+			h--;
+		}
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 }
 
 bool App::run()
 {
+	clFinish(_device.getCommandQueue());
+
 	if (!_updateInput())
 		return false;
+	total = _width * _height;
 	ImguiConf::UpdateImGui();
 	glEnable(GL_DEPTH_TEST);
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// COPY OLD STATE
-	{
-		// CLEAR COUNTER
-		{
-			glBindBuffer(GL_ARRAY_BUFFER, _sbos[Counter]);
-			GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
-			unsigned int *points = (unsigned int*)glMapBufferRange(GL_ARRAY_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
-			for (std::size_t i = 0; i < 4; ++i)
-				points[i] = 0;
-			glUnmapBuffer(GL_ARRAY_BUFFER);
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-		}
+	cl_event kernel_event[2];
+	auto queue = _device.getCommandQueue();
+	int err = 0;
 
-		if (_inject)
-		{
-			glBindBuffer(GL_ARRAY_BUFFER, _sbos[_read]);
 
-			GLint bufMask = GL_MAP_WRITE_BIT;
-			glm::vec4 *points = (glm::vec4*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(glm::vec4), bufMask);
-			points[(_injectCoord.x) + (_height -_injectCoord.y) * _width] = glm::vec4(MEDECINE.x, MEDECINE.y, 0,1);
-			glUnmapBuffer(GL_ARRAY_BUFFER);
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-			_inject = false;
-		}
+	glFinish();
 
-		auto *shader = _copyOldStateShader.get();
-		auto shaderId = shader->getId();
-		shader->use();
-
-		glBindBufferBase(GL_ARRAY_BUFFER, 0, _sbos[_read]);
-		glBindBufferBase(GL_ARRAY_BUFFER, 1, _sbos[_write]);
-		glBindBufferBase(GL_ARRAY_BUFFER, 2, _sbos[Counter]);
-
-		glDispatchCompute(_width * _height / _workGroupSize, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
-
+	err = clEnqueueAcquireGLObjects(queue, SboChannel::Positions, _clSbos, 0, NULL, NULL);
+	if (err < 0) {
+		perror("Couldn't acquire the GL objects");
+		exit(1);
 	}
-	// COMPUTE NEW STATE
+
+	err = clSetKernelArg(_copyOldStateShader.getKernel(), 0, sizeof(cl_mem), &_clSbos[_read]);
+	if (err < 0) {
+		printf("Couldn't set a kernel argument");
+		exit(1);
+	};
+	err = clSetKernelArg(_copyOldStateShader.getKernel(), 1, sizeof(cl_mem), &_clSbos[_write]);
+	if (err < 0) {
+		printf("Couldn't set a kernel argument");
+		exit(1);
+	};
+
+	err = clEnqueueNDRangeKernel(queue, _copyOldStateShader.getKernel(), 1, nullptr, (size_t *)&total, nullptr, 0, nullptr, &kernel_event[0]);
+	if (err < 0) {
+		perror("Couldn't enqueue the kernel");
+		exit(1);
+	}
+
+
+	err = clWaitForEvents(1, &kernel_event[0]);
+	if (err < 0) {
+		printf("Wait error");
+		exit(1);
+	};
+
+	err = clSetKernelArg(_computeNewStateShader.getKernel(), 0, sizeof(cl_mem), &_clSbos[_read]);
+	if (err < 0) {
+		printf("Couldn't set a kernel argument");
+		exit(1);
+	};
+	err = clSetKernelArg(_computeNewStateShader.getKernel(), 1, sizeof(cl_mem), &_clSbos[_write]);
+	if (err < 0) {
+		printf("Couldn't set a kernel argument");
+		exit(1);
+	};
+	
+	err = clEnqueueNDRangeKernel(queue, _computeNewStateShader.getKernel(), 1, nullptr, (size_t *)&total, nullptr, 0, nullptr, &kernel_event[1]);
+	if (err < 0) {
+		perror("Couldn't enqueue the kernel");
+		exit(1);
+	}
+
+   clWaitForEvents(1, &kernel_event[1]);
+	if (err < 0) {
+		perror("Couldn't enqueue the kernel");
+		exit(1);
+	}
+
+	clEnqueueReleaseGLObjects(queue, SboChannel::Positions, _clSbos, 0, NULL, NULL);
+	clFinish(queue);
+	clReleaseEvent(kernel_event[0]);
+	clReleaseEvent(kernel_event[1]);
+
+	if (_inject)
 	{
-		auto *shader = _computeNewStateShader.get();
-		auto shaderId = shader->getId();
-		shader->use();
+		_inject = false;
+		clFinish(_device.getCommandQueue());
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[_write]);
 
-		glBindBufferBase(GL_ARRAY_BUFFER, 0, _sbos[_read]);
-		glBindBufferBase(GL_ARRAY_BUFFER, 1, _sbos[_write]);
-
-		auto width = glGetUniformLocation(shaderId, "Width");
-		auto height = glGetUniformLocation(shaderId, "Height");
-
-		glUniform1ui(width, _width);
-		glUniform1ui(height, _height);
-
-		glDispatchCompute(_width * _height / _workGroupSize, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+		GLint bufMask = GL_MAP_WRITE_BIT;
+		auto coord = ((_injectCoord.x) + (_height - _injectCoord.y) * _width) * 4;
+		float *points = (float*)glMapBufferRange(GL_ARRAY_BUFFER, 0, _width * _height * sizeof(float) * 4, bufMask);
+		points[coord] = MEDECINE.x;
+		points[coord + 1] = MEDECINE.y;
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
 	// RENDER
 	{
+		clFinish(_device.getCommandQueue());
 		auto *shader = _renderShader.get();
 		auto shaderId = shader->getId();
 		shader->use();
@@ -385,6 +364,22 @@ bool App::run()
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 	}
 
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, _sbos[SboChannel::Counter]);
+
+		GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
+
+		unsigned int *points = (unsigned int*)glMapBufferRange(GL_ARRAY_BUFFER, 0, 4 * sizeof(unsigned int), bufMask);
+
+		for (GLuint i = 0; i < 4; ++i)
+		{
+			points[i] = 0;
+		}
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
+
+
 	ImGui::Render();
 	SDL_GL_SwapWindow(_window);
 
@@ -396,8 +391,6 @@ bool App::deactivate()
 	static std::once_flag flag;
 	std::call_once(flag, [this](){
 		_clean();
-		_computeNewStateShader.release();
-		_copyOldStateShader.release();
 		_renderShader.release();
 		ImGui::Shutdown();
 		SDL_GL_DeleteContext(_context);
@@ -440,11 +433,11 @@ bool App::_updateInput()
 			}
 			else if (event.key.keysym.sym == SDLK_r) // reloadShader
 			{
-				loadShaders();
+//				loadShaders();
 			}
 			else if (event.key.keysym.sym == SDLK_SPACE) // reloadShader
 			{
-				generateBuffers();
+//				generateBuffers();
 			}
 		}
 	}

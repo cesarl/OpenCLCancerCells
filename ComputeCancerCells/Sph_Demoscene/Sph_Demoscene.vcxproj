@@ -87,6 +87,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)Vendors/SDL2/include;$(SolutionDir)Vendors;$(CUDA_PATH_V6_5)/include</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_MBCS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -117,6 +118,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)Vendors/SDL2/include;$(SolutionDir)Vendors;$(CUDA_PATH_V6_5)/include</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -130,6 +132,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\vendors\imgui\imgui.cpp" />
+    <ClCompile Include="..\vendors\ocl.cpp" />
     <ClCompile Include="App.cpp" />
     <ClCompile Include="main.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
@@ -142,6 +145,18 @@
     <ClInclude Include="Globals.hpp" />
     <ClInclude Include="ImguiConfig.hpp" />
     <ClInclude Include="Shader.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Shaders\test.cl">
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\ComputeNewState.cl" />
+    <None Include="Shaders\CopyOldState.cl">
+      <FileType>Text</FileType>
+    </None>
+    <None Include="Shaders\Generate.cl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -27,6 +27,9 @@
     <ClCompile Include="..\vendors\imgui\imgui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\vendors\ocl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Shader.hpp">
@@ -41,5 +44,13 @@
     <ClInclude Include="Globals.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Shaders\test.cl" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\CopyOldState.cl" />
+    <None Include="Shaders\Generate.cl" />
+    <None Include="Shaders\ComputeNewState.cl" />
   </ItemGroup>
 </Project>

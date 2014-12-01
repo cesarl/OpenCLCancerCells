@@ -4,6 +4,7 @@
 #include <SDL.h>
 #include <memory>
 #include <glm/glm.hpp>
+#include <ocl.h>
 
 
 #include <CL/opencl.h>
@@ -11,10 +12,10 @@
 enum SboChannel
 {
 	State1 = 0
-	, State2
-	, Positions
-	, Counter
-	, END // keep at the end
+	, State2 = 1
+	, Counter = 2
+	, Positions = 3
+	, END = 4 // keep at the end
 };
 
 class App
@@ -34,9 +35,10 @@ public:
 	void loadShaders();
 	bool _updateInput();
 private:
-	cl_program test;
-	std::unique_ptr<OpenGLTools::Shader> _computeNewStateShader;
-	std::unique_ptr<OpenGLTools::Shader> _copyOldStateShader;
+	ocl_device _device;
+	ocl_kernel _computeNewStateShader;
+	ocl_kernel _copyOldStateShader;
+	int injectPoint;
 	std::unique_ptr<OpenGLTools::Shader> _renderShader;
 	SDL_Window *_window;
 	unsigned int _width;
@@ -44,7 +46,7 @@ private:
 	GLuint _workGroupSize;
 	SDL_GLContext _context;
 	GLuint _sbos[SboChannel::END];
-	cl_mem _clSbos[SboChannel::END];
+	cl_mem _clSbos[SboChannel::Positions];
 	float _totalTime;
 	float _deltaTime;
 	std::size_t _pastTime;
@@ -55,12 +57,11 @@ private:
 	int _cancerPercent;
 	int _healthyPercent;
 	float _zoom;
-	cl_context _cl_context;
-	cl_device_id _devices[100];
+	size_t total;
 
 	void _clean();
 
-	cl_program loadProgram(std::string &filename)
+	/*cl_program loadProgram(std::string &filename)
 	{
 		auto ph = fopen(filename.c_str(), "r");
 		fseek(ph, 0, SEEK_END);
@@ -85,5 +86,5 @@ private:
 			printf("%s\n", program_log);
 			free(program_log);
 		}
-	}
+	}*/
 };
